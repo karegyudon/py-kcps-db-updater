@@ -72,6 +72,33 @@ def _has_slot6_fitting(cursor, ship_id):
     return cursor.fetchone() is not None
 
 
+def _delete_ship_fittings(cursor, ship_id, ship_name):
+    """删除舰船的所有 fitting 记录（ExclusiveFitting + InclusiveFitting），ON DELETE CASCADE 自动清理关联表。"""
+    cursor.execute(
+        "SELECT ExclusiveFittingId FROM SlotExclusiveFittings WHERE ShipId=? AND Slot IN (4,5)",
+        (ship_id,))
+    excl_ids = [r[0] for r in cursor.fetchall()]
+    cursor.execute(
+        "SELECT InclusiveFittingId FROM SlotInclusiveFittings WHERE ShipId=? AND Slot=6",
+        (ship_id,))
+    slot6_incl_ids = [r[0] for r in cursor.fetchall()]
+    cursor.execute(
+        "SELECT InclusiveFittingsId FROM _Ship_InclusiveFitting WHERE RelatedShipsId=?",
+        (ship_id,))
+    ship_incl_ids = [r[0] for r in cursor.fetchall()]
+    for eid in excl_ids:
+        cursor.execute("DELETE FROM ExclusiveFittings WHERE Id=?", (eid,))
+    for iid in slot6_incl_ids:
+        cursor.execute("DELETE FROM InclusiveFittings WHERE Id=?", (iid,))
+    for iid in ship_incl_ids:
+        cursor.execute("DELETE FROM InclusiveFittings WHERE Id=?", (iid,))
+    deleted = len(excl_ids) + len(slot6_incl_ids) + len(ship_incl_ids)
+    if deleted > 0:
+        print(f"    Deleted: {len(excl_ids)} ExclusiveFitting(s), "
+              f"{len(slot6_incl_ids)} Slot6 IF, {len(ship_incl_ids)} Ship-level IF")
+    return deleted > 0
+
+
 def _get_slots_needing_fitting(conn, api, ship_id):
     """
     返回舰船需要生成 ExclusiveFitting 的槽位列表。
