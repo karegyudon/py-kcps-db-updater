@@ -7,7 +7,7 @@ KC 舰队数据库自动更新工具，从 api_start2.json 同步 Ship、Equipme
 - **Ship 同步**：自动检测 api_start2.json 中的新增舰船，同步到 SQLite 数据库
 - **Equipment 同步**：新增装备自动写入 Equipment 表
 - **Slot Fitting 自动生成**：
-  - 新增舰船的 ExclusiveFitting（Slot4）
+  - 新增舰船的 ExclusiveFitting（Slot 4/5/6）
   - 新增舰船的 InclusiveFitting（Slot6，继承自母舰链）
   - 继承规则：子舰的 Slot6 InclusiveFitting = 父舰的 Slot6 InclusiveFitting + 父舰的 Slot4 ExclusiveFitting
 
@@ -58,7 +58,8 @@ update_db_from_json.py  →  GameConstants.sqlite3
 
 ### Slot Fitting 规则
 
-- **ExclusiveFitting**：新舰船自动创建 Slot4 排除列表（基于 api_mst_equip_exslot_types）
+- **Slots 1-3**：默认无限制，不需要 ExclusiveFitting
+- **Slots 4/5/6**：都可能有限制，需要生成 ExclusiveFitting（基于 api_mst_equip_exslot_types）
 - **InclusiveFitting**：新舰船继承母舰链的 Slot6 排除列表
 - **继承链**：通过 `api_aftershipid` 反向搜索找到母舰，逐级向上遍历
 

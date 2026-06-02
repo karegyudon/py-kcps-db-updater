@@ -72,23 +72,31 @@ def _has_slot6_fitting(cursor, ship_id):
     return cursor.fetchone() is not None
 
 
-def _needs_extra_slot_fitting(conn, api, ship_id):
-    """当舰船 slot_num > 母舰且尚未创建 ExclusiveFitting 时返回 True."""
+def _get_slots_needing_fitting(conn, api, ship_id):
+    """
+    返回舰船需要生成 ExclusiveFitting 的槽位列表。
+    Slots 1-3 默认无限制，Slot 4/5/6 都可能需要限制。
+    返回 (需要限制的槽位列表, 母舰ID)。
+    """
     c = conn.cursor()
     ships = {s["api_id"]: s for s in api["api_mst_ship"]}
     ship = ships.get(ship_id)
     if not ship:
-        return False, None
+        return [], None
     parent_id = _find_parent_ship_id(api, ship_id)
     if not parent_id or parent_id not in ships:
-        return False, None
+        return [], None
     parent = ships[parent_id]
     if ship["api_slot_num"] <= parent["api_slot_num"]:
-        return False, None
-    new_slot = ship["api_slot_num"]
-    if _has_slot_exclusive_fitting(c, ship_id, new_slot):
-        return False, None
-    return True, parent_id
+        return [], None
+
+    # 检查 Slot 4/5/6 是否需要 ExclusiveFitting
+    slots_needing_fitting = []
+    for slot in [4, 5, 6]:
+        if slot <= ship["api_slot_num"] and not _has_slot_exclusive_fitting(c, ship_id, slot):
+            slots_needing_fitting.append(slot)
+
+    return slots_needing_fitting, parent_id
 
 
 def sync_ships(conn, api, ship_type_map, dry_run=False):
@@ -316,13 +324,13 @@ def _process_new_ship(conn, api, ships_map, c, ship_id, exslot_ship, exslot_type
     else:
         print(f"    ShipType IF ({api_stype}): (none)")
 
-    need_slot4, parent_id = _needs_extra_slot_fitting(conn, api, ship_id)
-    if need_slot4:
-        new_slot = ship["api_slot_num"]
+    slots_needing_fitting, parent_id = _get_slots_needing_fitting(conn, api, ship_id)
+    if slots_needing_fitting:
         ship_if_types = _find_nearest_ship_if(c, api, ship_id)
-        print(f"    -> slot increase (parent={parent_id}), Slot{new_slot} ExclusiveFitting")
-        _generate_extra_slot_fitting(conn, ship_id, ship_name, new_slot,
-                                      ship_type_if_types, exslot_types, ship_if_types, dry_run)
+        print(f"    -> slot increase (parent={parent_id}), ExclusiveFitting for slots: {slots_needing_fitting}")
+        for slot in slots_needing_fitting:
+            _generate_extra_slot_fitting(conn, ship_id, ship_name, slot,
+                                          ship_type_if_types, exslot_types, ship_if_types, dry_run)
 
     slot6_id = _generate_slot6_fitting(conn, ship_id, ship_name, api_ctype, exslot_ship, dry_run)
     if slot6_id:
