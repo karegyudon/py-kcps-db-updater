@@ -99,6 +99,80 @@ def _delete_ship_fittings(cursor, ship_id, ship_name):
     return deleted > 0
 
 
+def _ensure_ships_slot_count_column(conn):
+    """确保 Ships 表有 ApiSlotCount 列（迁移），返回是否新增了列。"""
+    c = conn.cursor()
+    c.execute("PRAGMA table_info(Ships)")
+    columns = {row[1] for row in c.fetchall()}
+    if "ApiSlotCount" not in columns:
+        c.execute("ALTER TABLE Ships ADD COLUMN ApiSlotCount INTEGER NULL")
+        conn.commit()
+        return True
+    return False
+
+
+def _populate_missing_slot_counts(conn, api):
+    """填充 ApiSlotCount 为 NULL 的已有船（首次运行迁移）。"""
+    c = conn.cursor()
+    c.execute("SELECT Id FROM Ships WHERE ApiSlotCount IS NULL")
+    null_ids = [r[0] for r in c.fetchall()]
+    if not null_ids:
+        return 0
+    ships_map = {s["api_id"]: s for s in api["api_mst_ship"]}
+    filled = 0
+    for ship_id in null_ids:
+        if ship_id >= 1500:
+            continue
+        ship = ships_map.get(ship_id)
+        if not ship:
+            continue
+        c.execute("UPDATE Ships SET ApiSlotCount=? WHERE Id=?", (ship["api_slot_num"], ship_id))
+        filled += 1
+    if filled:
+        conn.commit()
+    return filled
+
+
+def _scan_slot_changes(conn, api, ships_map, dry_run=False):
+    """
+    对比 DB 的 ApiSlotCount 与 API 的 api_slot_num，检测 slot 变化。
+    返回需要重建 fitting 的舰船 ID 列表。
+    """
+    c = conn.cursor()
+    c.execute("SELECT Id, ApiSlotCount FROM Ships WHERE ApiSlotCount IS NOT NULL")
+    rows = c.fetchall()
+    slot_changed = []
+
+    for ship_id, old_count in rows:
+        if ship_id >= 1500:
+            continue
+        ship = ships_map.get(ship_id)
+        if not ship:
+            continue
+
+        new_count = ship["api_slot_num"]
+        if new_count == old_count:
+            continue
+
+        ship_name = ship["api_name"]
+        if new_count < old_count:
+            print(f"  ! Ship {ship_id}: {ship_name} (slots {old_count}→{new_count}, -{old_count - new_count} slot) - DECREASE, skipping")
+            continue
+
+        print(f"  ~ Ship {ship_id}: {ship_name} (slots {old_count}→{new_count}, +{new_count - old_count} slot)")
+
+        if not dry_run:
+            _delete_ship_fittings(c, ship_id, ship_name)
+            c.execute("UPDATE Ships SET ApiSlotCount=? WHERE Id=?", (new_count, ship_id))
+
+        slot_changed.append(ship_id)
+
+    if not dry_run and slot_changed:
+        conn.commit()
+
+    return slot_changed
+
+
 def _get_slots_needing_fitting(conn, api, ship_id):
     """
     返回舰船需要生成 ExclusiveFitting 的槽位列表。
@@ -391,12 +465,23 @@ def update_database(db_path, api_path, dry_run=False):
     new_ships = sync_ships(conn, api, ship_type_map, dry_run)
     print(f"  -> {len(new_ships)} new ships")
 
+    print(f"\n--- Step 1.5: Scan existing ships for slot changes ---")
+    column_added = _ensure_ships_slot_count_column(conn)
+    if column_added:
+        print("  Added ApiSlotCount column to Ships")
+    filled = _populate_missing_slot_counts(conn, api)
+    if filled:
+        print(f"  Filled ApiSlotCount for {filled} ships (first run)")
+    slot_changed = _scan_slot_changes(conn, api, ships_map, dry_run=dry_run)
+    print(f"  -> {len(slot_changed)} ships with slot changes")
+
     print(f"\n--- Step 2: Sync Equipments ---")
     new_equips = sync_equipments(conn, api, equip_type_map, exslot_types, dry_run)
     print(f"  -> {len(new_equips)} new equipment")
 
-    print(f"\n--- Step 3: Generate Slot fittings for new ships ---")
-    for ship_id in sorted(new_ships):
+    print(f"\n--- Step 3: Generate Slot fittings ---")
+    all_ships_to_process = sorted(set(new_ships) | set(slot_changed))
+    for ship_id in all_ships_to_process:
         _process_new_ship(conn, api, ships_map, c, ship_id, exslot_ship, exslot_types, dry_run=dry_run)
 
     if not dry_run:
