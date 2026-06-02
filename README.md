@@ -59,8 +59,8 @@ update_db_from_json.py  →  GameConstants.sqlite3
 ### Slot Fitting 规则
 
 - **Slots 1-3**：默认无限制，不需要 ExclusiveFitting
-- **Slots 4/5/6**：都可能有限制，需要生成 ExclusiveFitting（基于 api_mst_equip_exslot_types）
-- **InclusiveFitting**：新舰船继承母舰链的 Slot6 排除列表
+- **Slots 4/5**：可能有限制，需要生成 ExclusiveFitting（基于 api_mst_equip_exslot_types）
+- **Slot 6**：所有船都支持，通过 InclusiveFitting 处理（api_mst_equip_exslot_ship）
 - **继承链**：通过 `api_aftershipid` 反向搜索找到母舰，逐级向上遍历
 
 ### 母舰查找

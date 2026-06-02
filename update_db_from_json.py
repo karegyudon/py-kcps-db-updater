@@ -75,7 +75,8 @@ def _has_slot6_fitting(cursor, ship_id):
 def _get_slots_needing_fitting(conn, api, ship_id):
     """
     返回舰船需要生成 ExclusiveFitting 的槽位列表。
-    Slots 1-3 默认无限制，Slot 4/5/6 都可能需要限制。
+    Slots 1-3 默认无限制，Slot 4/5 可能需要限制。
+    Slot 6 是所有船都支持的，通过 InclusiveFitting 处理。
     返回 (需要限制的槽位列表, 母舰ID)。
     """
     c = conn.cursor()
@@ -90,9 +91,8 @@ def _get_slots_needing_fitting(conn, api, ship_id):
     if ship["api_slot_num"] <= parent["api_slot_num"]:
         return [], None
 
-    # 检查 Slot 4/5/6 是否需要 ExclusiveFitting
     slots_needing_fitting = []
-    for slot in [4, 5, 6]:
+    for slot in [4, 5]:
         if slot <= ship["api_slot_num"] and not _has_slot_exclusive_fitting(c, ship_id, slot):
             slots_needing_fitting.append(slot)
 
