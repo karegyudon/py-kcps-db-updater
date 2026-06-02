@@ -26,25 +26,28 @@ KC 舰队数据库自动更新工具，从 api_start2.json 同步 Ship、Equipme
 python update_db_from_json.py
 ```
 
-Windows 用户可运行 `02-update_database.cmd`。
+Windows 用户直接运行 `00-update-all.cmd` 即可一键完成全部更新。
 
 ## 文件说明
 
 | 文件 | 说明 |
 |------|------|
+| `00-update-all.cmd` | Windows 一键更新启动器（合并版） |
 | `update_db_from_json.py` | 主程序，执行数据库同步 |
 | `update_mappings.py` | JSON 映射更新脚本 |
 | `ship_mappings.json` | 舰船 ID 映射（自动生成） |
 | `item_mappings.json` | 装备 ID 映射（自动生成） |
-| `api_start2.json` | 游戏 API 数据源（需手动获取） |
+| `api_start2.json` | 游戏 API 数据源 |
 | `api_start2.json.old` | 上次更新前的 API 历史版本（自动存档） |
 | `data/GameConstants.sqlite3` | 目标 SQLite 数据库 |
 
 ## 工作流程
 
 ```
-api_start2.json
+api_start2.json.old (上次存档)
     ↓
+api_start2.json (最新下载)
+    ↓ (对比文件差异)
 update_mappings.py  →  ship_mappings.json / item_mappings.json
     ↓
 update_db_from_json.py  →  GameConstants.sqlite3
@@ -52,9 +55,10 @@ update_db_from_json.py  →  GameConstants.sqlite3
 
 ### 更新步骤
 
-1. 获取最新 api_start2.json（游戏 API 数据）
-2. 运行 `01-update_data.cmd` 生成映射文件
-3. 运行 `02-update_database.cmd` 更新数据库
+1. 运行 `00-update-all.cmd`
+2. 程序自动将现有 api_start2.json 改名为 .old
+3. 自动下载最新数据并与旧版对比
+4. 如有变化自动更新数据库
 
 ## 技术细节
 
