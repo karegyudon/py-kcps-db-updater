@@ -6,9 +6,10 @@ KC 舰队数据库自动更新工具，从 api_start2.json 同步 Ship、Equipme
 
 - **Ship 同步**：自动检测 api_start2.json 中的新增舰船，同步到 SQLite 数据库
 - **Equipment 同步**：新增装备自动写入 Equipment 表
+- **Slot 数量变化检测**：自动检测已存在舰船的 slot 数量变化（如時雨改三 3→4），重建 fitting
 - **Slot Fitting 自动生成**：
-  - 新增舰船的 ExclusiveFitting（Slot 4/5/6）
-  - 新增舰船的 InclusiveFitting（Slot6，继承自母舰链）
+  - 新增/变化舰船的 ExclusiveFitting（Slot 4/5）
+  - 新增/变化舰船的 InclusiveFitting（Slot6，继承自母舰链）
   - 继承规则：子舰的 Slot6 InclusiveFitting = 父舰的 Slot6 InclusiveFitting + 父舰的 Slot4 ExclusiveFitting
 
 ## 快速开始
@@ -66,6 +67,16 @@ update_db_from_json.py  →  GameConstants.sqlite3
 ### 母舰查找
 
 程序通过反向搜索 `api_aftershipid`（谁指向当前舰）来找到母舰，而非使用 `api_beforeshipid`（该字段在 API 中未填充）。
+
+### Slot 数量变化检测
+
+数据库首次运行时会自动添加 `Ships.ApiSlotCount` 列（迁移），并填入当前 API 的 `api_slot_num` 作为基线。后续运行会对比该列与最新 API：
+
+- **API > DB**：检测到 slot 增加，删除旧 fitting 并重建（视为新船处理）
+- **API < DB**：slot 减少，仅打印警告不修改（避免破坏手工添加的 fitting）
+- **API = DB**：无变化，跳过
+
+示例：2026-05-28 更新后時雨改三从 3 slots 改为 4 slots，运行程序会自动检测并重建其 Slot4 ExclusiveFitting 和 Slot6 InclusiveFitting。
 
 ## 许可证
 
