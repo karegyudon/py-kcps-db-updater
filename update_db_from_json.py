@@ -73,7 +73,8 @@ def _has_slot6_fitting(cursor, ship_id):
 
 
 def _delete_ship_fittings(cursor, ship_id, ship_name):
-    """删除舰船的所有 fitting 记录（ExclusiveFitting + InclusiveFitting），ON DELETE CASCADE 自动清理关联表。"""
+    """删除舰船的所有 fitting 记录。
+    显式删除子表 + 父表，避免依赖 CASCADE（更稳健）。"""
     cursor.execute(
         "SELECT ExclusiveFittingId FROM SlotExclusiveFittings WHERE ShipId=? AND Slot IN (4,5)",
         (ship_id,))
@@ -86,6 +87,9 @@ def _delete_ship_fittings(cursor, ship_id, ship_name):
         "SELECT InclusiveFittingsId FROM _Ship_InclusiveFitting WHERE RelatedShipsId=?",
         (ship_id,))
     ship_incl_ids = [r[0] for r in cursor.fetchall()]
+    cursor.execute("DELETE FROM SlotExclusiveFittings WHERE ShipId=? AND Slot IN (4,5)", (ship_id,))
+    cursor.execute("DELETE FROM SlotInclusiveFittings WHERE ShipId=? AND Slot=6", (ship_id,))
+    cursor.execute("DELETE FROM _Ship_InclusiveFitting WHERE RelatedShipsId=?", (ship_id,))
     for eid in excl_ids:
         cursor.execute("DELETE FROM ExclusiveFittings WHERE Id=?", (eid,))
     for iid in slot6_incl_ids:
@@ -454,6 +458,7 @@ def update_database(db_path, api_path, dry_run=False):
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     c = conn.cursor()
 
     ship_type_map = _get_type_map(c, "ShipTypes")
