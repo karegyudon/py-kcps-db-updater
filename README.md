@@ -37,6 +37,7 @@ Windows 用户可运行 `02-update_database.cmd`。
 | `ship_mappings.json` | 舰船 ID 映射（自动生成） |
 | `item_mappings.json` | 装备 ID 映射（自动生成） |
 | `api_start2.json` | 游戏 API 数据源（需手动获取） |
+| `api_start2.json.old` | 上次更新前的 API 历史版本（自动存档） |
 | `data/GameConstants.sqlite3` | 目标 SQLite 数据库 |
 
 ## 工作流程
@@ -70,11 +71,13 @@ update_db_from_json.py  →  GameConstants.sqlite3
 
 ### Slot 数量变化检测
 
-数据库首次运行时会自动添加 `Ships.ApiSlotCount` 列（迁移），并填入当前 API 的 `api_slot_num` 作为基线。后续运行会对比该列与最新 API：
+程序通过对比 `api_start2.json` 与 `api_start2.json.old`（上次更新前的历史版本）来检测已有舰船的 slot 数量变化：
 
-- **API > DB**：检测到 slot 增加，删除旧 fitting 并重建（视为新船处理）
-- **API < DB**：slot 减少，仅打印警告不修改（避免破坏手工添加的 fitting）
-- **API = DB**：无变化，跳过
+- **首次运行**：自动将当前 `api_start2.json` 存档为 `api_start2.json.old`，无变化检测
+- **后续运行**：对比新旧两个 API 文件，检测已有舰船的 slot 数量变化
+  - **增加**：删除旧 fitting 并重建（视为新船处理）
+  - **减少**：仅打印警告，不修改（避免破坏手工添加的 fitting）
+  - **不变**：跳过
 
 示例：2026-05-28 更新后時雨改三从 3 slots 改为 4 slots，运行程序会自动检测并重建其 Slot4 ExclusiveFitting 和 Slot6 InclusiveFitting。
 

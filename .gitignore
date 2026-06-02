@@ -17,6 +17,7 @@ venv/
 
 # Generated data (large files, don't track)
 api_start2.json
+api_start2.json.old
 ship_mappings.json
 item_mappings.json
 data/*.sqlite3

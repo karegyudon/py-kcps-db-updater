@@ -4,6 +4,8 @@ import sqlite3
 import json
 import uuid
 import sys
+import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -103,62 +105,34 @@ def _delete_ship_fittings(cursor, ship_id, ship_name):
     return deleted > 0
 
 
-def _ensure_ships_slot_count_column(conn):
-    """确保 Ships 表有 ApiSlotCount 列（迁移），返回是否新增了列。"""
-    c = conn.cursor()
-    c.execute("PRAGMA table_info(Ships)")
-    columns = {row[1] for row in c.fetchall()}
-    if "ApiSlotCount" not in columns:
-        c.execute("ALTER TABLE Ships ADD COLUMN ApiSlotCount INTEGER NULL")
-        conn.commit()
-        return True
-    return False
-
-
-def _populate_missing_slot_counts(conn, api):
-    """填充 ApiSlotCount 为 NULL 的已有船（首次运行迁移）。"""
-    c = conn.cursor()
-    c.execute("SELECT Id FROM Ships WHERE ApiSlotCount IS NULL")
-    null_ids = [r[0] for r in c.fetchall()]
-    if not null_ids:
-        return 0
-    ships_map = {s["api_id"]: s for s in api["api_mst_ship"]}
-    filled = 0
-    for ship_id in null_ids:
-        if ship_id >= 1500:
-            continue
-        ship = ships_map.get(ship_id)
-        if not ship:
-            continue
-        c.execute("UPDATE Ships SET ApiSlotCount=? WHERE Id=?", (ship["api_slot_num"], ship_id))
-        filled += 1
-    if filled:
-        conn.commit()
-    return filled
-
-
-def _scan_slot_changes(conn, api, ships_map, dry_run=False):
+def _scan_slot_changes(conn, old_api, new_api, dry_run=False):
     """
-    对比 DB 的 ApiSlotCount 与 API 的 api_slot_num，检测 slot 变化。
+    对比旧版与新版 api_start2.json，检测已有舰船的 slot 数量变化。
+    old_api 为 None 表示首次运行（无历史数据），直接返回空列表。
     返回需要重建 fitting 的舰船 ID 列表。
     """
+    if old_api is None:
+        return []
+
+    old_ships = {s["api_id"]: s for s in old_api["api_mst_ship"]}
+    new_ships = {s["api_id"]: s for s in new_api["api_mst_ship"]}
     c = conn.cursor()
-    c.execute("SELECT Id, ApiSlotCount FROM Ships WHERE ApiSlotCount IS NOT NULL")
-    rows = c.fetchall()
     slot_changed = []
 
-    for ship_id, old_count in rows:
+    common_ids = set(old_ships.keys()) & set(new_ships.keys())
+    for ship_id in sorted(common_ids):
         if ship_id >= 1500:
             continue
-        ship = ships_map.get(ship_id)
-        if not ship:
-            continue
 
-        new_count = ship["api_slot_num"]
+        old_ship = old_ships[ship_id]
+        new_ship = new_ships[ship_id]
+        old_count = old_ship["api_slot_num"]
+        new_count = new_ship["api_slot_num"]
+
         if new_count == old_count:
             continue
 
-        ship_name = ship["api_name"]
+        ship_name = new_ship["api_name"]
         if new_count < old_count:
             print(f"  ! Ship {ship_id}: {ship_name} (slots {old_count}→{new_count}, -{old_count - new_count} slot) - DECREASE, skipping")
             continue
@@ -167,7 +141,6 @@ def _scan_slot_changes(conn, api, ships_map, dry_run=False):
 
         if not dry_run:
             _delete_ship_fittings(c, ship_id, ship_name)
-            c.execute("UPDATE Ships SET ApiSlotCount=? WHERE Id=?", (new_count, ship_id))
 
         slot_changed.append(ship_id)
 
@@ -471,13 +444,15 @@ def update_database(db_path, api_path, dry_run=False):
     print(f"  -> {len(new_ships)} new ships")
 
     print(f"\n--- Step 1.5: Scan existing ships for slot changes ---")
-    column_added = _ensure_ships_slot_count_column(conn)
-    if column_added:
-        print("  Added ApiSlotCount column to Ships")
-    filled = _populate_missing_slot_counts(conn, api)
-    if filled:
-        print(f"  Filled ApiSlotCount for {filled} ships (first run)")
-    slot_changed = _scan_slot_changes(conn, api, ships_map, dry_run=dry_run)
+    old_api_path = api_path + ".old"
+    if not os.path.exists(old_api_path):
+        import shutil
+        shutil.copy2(api_path, old_api_path)
+        print(f"  First run: archived current API as {old_api_path}")
+        slot_changed = []
+    else:
+        old_api = load_api(old_api_path)
+        slot_changed = _scan_slot_changes(conn, old_api, api, dry_run=dry_run)
     print(f"  -> {len(slot_changed)} ships with slot changes")
 
     print(f"\n--- Step 2: Sync Equipments ---")
